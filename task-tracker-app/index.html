@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Tasks">
+<meta name="theme-color" content="#F2F2F7">
+<title>Tasks</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+  :root { --blue: #007AFF; --red: #FF3B30; --bg: #F2F2F7; --card: #FFFFFF; --sep: #C6C6C8; --muted: #8E8E93; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: #000; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+  button, input { font: inherit; }
+  .app { max-width: 560px; margin: 0 auto; padding: calc(env(safe-area-inset-top) + 20px) 16px calc(env(safe-area-inset-bottom) + 32px); }
+  header h1 { margin: 0; font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: 0.37px; }
+  header p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+  .add { margin-top: 16px; display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 12px; padding: 0 8px 0 14px; min-height: 48px; }
+  .add input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 17px; height: 44px; }
+  .add button { width: 36px; height: 36px; flex: none; border: 0; border-radius: 18px; background: var(--blue); color: #fff; font-size: 24px; line-height: 1; cursor: pointer; }
+  .seg { margin-top: 16px; display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: rgba(118, 118, 128, 0.12); }
+  .seg button { flex: 1; min-height: 32px; padding: 0 2px; border: 0; border-radius: 7px; background: transparent; color: #000; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--card); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+  .list { list-style: none; margin: 16px 0 0; padding: 0; background: var(--card); border-radius: 12px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 0 0 0 16px; min-height: 52px; border-bottom: 0.5px solid var(--sep); }
+  .row:last-child { border-bottom: 0; }
+  .row input[type="checkbox"] { width: 24px; height: 24px; margin: 0; flex: none; accent-color: var(--blue); cursor: pointer; }
+  .text { flex: 1; min-width: 0; font-size: 17px; line-height: 22px; overflow-wrap: anywhere; padding: 15px 0; }
+  .text.urgent { color: var(--red); font-weight: 600; }
+  .text.done { color: var(--muted); text-decoration: line-through; }
+  .flag { min-width: 32px; min-height: 32px; border-radius: 16px; border: 1px solid var(--sep); background: var(--card); color: var(--muted); font-size: 16px; font-weight: 700; cursor: pointer; }
+  .flag.on { background: var(--red); border-color: var(--red); color: #fff; }
+  .delete { min-width: 44px; min-height: 44px; padding: 0 8px 0 4px; border: 0; background: transparent; color: var(--red); font-size: 15px; font-weight: 500; cursor: pointer; }
+  .empty { margin: 16px 0 0; padding: 32px 16px; background: var(--card); border-radius: 12px; color: var(--muted); font-size: 15px; text-align: center; }
+</style>
+</head>
+<body>
+<main class="app">
+  <header>
+    <h1>Tasks</h1>
+    <p id="count"></p>
+  </header>
+
+  <form id="add-form" class="add" autocomplete="off">
+    <input id="new-task" type="text" placeholder="New task" aria-label="New task">
+    <button type="submit" aria-label="Add task">+</button>
+  </form>
+
+  <div class="seg" role="group" aria-label="Filter tasks">
+    <button type="button" data-filter="all" aria-pressed="true">All</button>
+    <button type="button" data-filter="active" aria-pressed="false">Active</button>
+    <button type="button" data-filter="done" aria-pressed="false">Done</button>
+    <button type="button" data-filter="important" aria-pressed="false">Important</button>
+  </div>
+
+  <ul id="list" class="list"></ul>
+  <p id="empty" class="empty" hidden>No tasks here. Tap + to add one.</p>
+</main>
+
+<script>
+(() => {
+  const KEY = 'tasks.v1';
+  const seed = [
+    { id: 1, text: 'Draft the quarterly plan', done: false, important: true },
+    { id: 2, text: 'Book dentist appointment', done: true, important: false },
+    { id: 3, text: 'Review open pull requests', done: false, important: false }
+  ];
+
+  let tasks;
+  try { tasks = JSON.parse(localStorage.getItem(KEY)); } catch (e) { tasks = null; }
+  if (!Array.isArray(tasks)) tasks = seed;
+
+  let filter = 'all';
+  const list = document.getElementById('list');
+  const empty = document.getElementById('empty');
+  const count = document.getElementById('count');
+  const input = document.getElementById('new-task');
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch (e) { /* storage unavailable: keep working in memory */ }
+  }
+
+  function visible() {
+    if (filter === 'active') return tasks.filter(t => !t.done);
+    if (filter === 'done') return tasks.filter(t => t.done);
+    if (filter === 'important') return tasks.filter(t => t.important);
+    return tasks;
+  }
+
+  function render() {
+    const items = visible();
+    list.replaceChildren();
+
+    for (const t of items) {
+      const li = document.createElement('li');
+      li.className = 'row';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = t.done;
+      cb.setAttribute('aria-label', 'Mark as done');
+      cb.addEventListener('change', () => { t.done = !t.done; save(); render(); });
+
+      const text = document.createElement('span');
+      text.className = 'text' + (t.done ? ' done' : '') + (t.important && !t.done ? ' urgent' : '');
+      text.textContent = t.text;
+
+      const flag = document.createElement('button');
+      flag.type = 'button';
+      flag.className = 'flag' + (t.important ? ' on' : '');
+      flag.textContent = '!';
+      flag.setAttribute('aria-pressed', String(t.important));
+      flag.setAttribute('aria-label', 'Mark as important');
+      flag.addEventListener('click', () => { t.important = !t.important; save(); render(); });
+
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'delete';
+      del.textContent = 'Delete';
+      del.addEventListener('click', () => { tasks = tasks.filter(x => x !== t); save(); render(); });
+
+      li.append(cb, text, flag, del);
+      list.append(li);
+    }
+
+    empty.hidden = items.length > 0;
+    const remaining = tasks.filter(t => !t.done).length;
+    count.textContent = remaining + ' left · ' + tasks.length + ' total';
+    document.querySelectorAll('.seg button').forEach(b => {
+      b.setAttribute('aria-pressed', String(b.dataset.filter === filter));
+    });
+  }
+
+  document.querySelectorAll('.seg button').forEach(b => {
+    b.addEventListener('click', () => { filter = b.dataset.filter; render(); });
+  });
+
+  document.getElementById('add-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    tasks.unshift({ id: Date.now(), text, done: false, important: false });
+    input.value = '';
+    save();
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
